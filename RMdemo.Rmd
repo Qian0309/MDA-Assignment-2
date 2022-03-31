@@ -1,6 +1,6 @@
 ---
-title: "RMarkdown demonstration"
-author: "Finn Lindgren"
+title: "MDA Assignment 2"
+author: "s1935687, Xinyi Qian"
 output:
   rmarkdown::html_document:
     number_sections: yes
@@ -19,91 +19,146 @@ suppressPackageStartupMessages(library(tidyverse))
 theme_set(theme_bw())
 ```
 
-# This is a heading
-
-RMarkdown documents combine regular text with R _code chunks_, and
-partial LaTeX equation support.
-
-The following is an R code "chunk". Any output from running the code
-will be typeset as well.
-
-```{r}
-cos(1)
-```
-
-We can include code from script files, optionally without showing it.
 ```{r external-code, code=readLines("my_code.R"), eval=TRUE}
 # Having source() here makes it run even when running interactively as well.
 # The generated html from knit:ing will run the code from code=.
 source("my_code.R")
 ```
 
-The output of R code can also be included in lines of text, like
-$\sin(1)=`r sin(1)`$.  Note: RMarkdown is sometimes picky about
-whitespace; in this example, eliminating whitespace and having the R
-code start on a new line turned out to be the safest option.
+# Milk compositions of mammals
 
-## This is a sub-heading
+Taxonomy of biological organisms is a well established area of biology and typically based on characteristics such as morphology, physiology and behaviour. In this report, we will develop a taxonomy of mammals based on their milk composition. 
 
-This is some more text with a simple mathematical formula,
-$y_i = \beta_0 + x_i \beta_1 + \epsilon_i$. The mathematical formula
-syntax is essentially a subset of the powerful LaTeX notation. Larger
-formulas can be "displayed", using `$$` instead of `$`. For example,
-$$
-y_i = \beta_0 + \sum_{k=1}^p X_{ik} \beta_k + \epsilon_i ,
-$$
-is displayed on a line of its own.
+## Summary statistics
 
-In matrix form, the equation can be written
-$$
-\bm{y} = \bm{X}\bm{\beta} + \bm{\epsilon} ,
-$$
-where
-$$
-\bm{X} = \mat{
-1 & X_{11} & \dots & X_{1p} \\
-\vdots & \vdots & \ddots & \vdots \\
-1 & X_{n1} & \dots & X_{np}
-}
-$$
+Firstly, we can have a look at the summary of the data:
 
+```{r load, echo = FALSE}
 
-A blank line gives a new paragraph.
+load("/cloud/project/MammalsMilk.Rdata")
 
-If we only want the result of a chunk of R code to be seen, we can add
-special instructions in a comment at the beginning of the code chunk.
-See <https://yihui.name/knitr/options/> for a list of all the available
-options!
+suppressPackageStartupMessages(library(reshape)) # Useful to re-arrange data set
 
-```{r echo=FALSE}
-sin(1)
+milk.long <- melt(milk,id.vars=c("Name")) # from wide to long format
+
+names(milk.long)[1:3] <- c("Mammal","Constituent","Value")
+
 ```
 
-The `echo=FALSE` option can be useful for hiding code where we only want
-to show the result of a computation, and note the code itself. Another
-useful option is `eval=FALSE`, which can be used for chunks of code that
-should be shown but not run, perhaps to illustrate a programming error,
-which RMarkdown would otherwise complain about:
+```{r summary statistics, echo = FALSE}
+summary(milk[,2:5])
 
-```{r echo=TRUE,eval=FALSE}
-curve(cos x, 0, 1)
+apply(milk[,2:5],2,sd) # Standard deviations
+
 ```
 
-We can also include R generated figures:
+## The convenience of standardising the data
+From the above summary statistics we see that the standard deviations do differ largely from one constituent of milk to another. It is therefore reasonable to think that standardising data will necessarily have a real impact on the results. Does 1$\%$ change in the milk compositions represent the same thing in lactose as in Water? When comparing the milk compositions of different mammals, failing to standardise the data means attributing the same influence to a difference of 1 degree, whatever the constituent. When standardised, this difference is amplified as it becomes more evident between different constituents of the mammal milk where the percentage of milk compositions vary little from one mammal to another. 
 
-```{r myplot, echo=FALSE}
-ggplot(data.frame(x = seq(1e-3, pi, length.out = 1000)) %>%
-         mutate(fun = cos(pi / x))) +
-  geom_line(aes(x, fun))
+## Hierarchical clustering analysis
+We begin with producing a dendrogram using an adequate distance measure: the Euclidean distance.
+```{r a dendrogram, echo = FALSE, fig.height = 4, fig.width = 5}
+
+milk2 <- scale(milk[,2:5])
+d <- dist(milk2, method = "euclidean") # Distance matrix: Euclidean on standarised variables
+hc <- hclust(d, method="ward.D") # Ward's clustering method
+plot(hc,labels=milk$Name) # dendrogram
+
 ```
 
-# Code appendix
+Then, we want to use a hierarchical clustering algorithm and select a sensible number of clusters according to the results.
 
-We can show (and optionally run) code from earlier code chunks:
+Note that a number of measures or indexes have been proposed for cluster validation, comparison, decision about the number of clusters, etc. Several of them are implemented through the function cluster.stats in the R package fpc. For illustration, we focus on the $Calinski$ $and$ $Harabasz$
+$index$ (CH index, Calinski and Harabasz, 1974) and the $average$ $silhouette$ $width$ (ASW).
 
-```{r ref.label="myplot", echo=TRUE, eval=FALSE}
+The CH index is based on the ratio of the $\text{between cluster sum of squares}$ to the $\text{within cluster sum of squares}$ (these both are adjusted for the number of clusters considered). You can compute it for a range of possible number of clusters and the largest value determines the optimal number of clusters according to the CH index.
+
+The CH index for a 3-cluster solution and a 4-cluster solution is respectively:
+```{r CH index clusters, echo = FALSE}
+library(fpc)
+
+ward3 <- cutree(hc, k=3) # Extract a 3-cluster solution
+clusval3 <- cluster.stats(d,ward3) # Validation stats for a 3-cluster solution
+clusval3$ch # CH index for a 3-cluster solution
+
+ward4 <- cutree(hc, k=4) # Extract a 4-cluster solution
+clusval4 <- cluster.stats(d,ward4) # Validation stats for a 4-cluster solution
+clusval4$ch # CH index for a 4-cluster solution
 ```
 
-And we can show code from external files without running it:
-```{r code=readLines("my_code.R"), eval=FALSE, echo=TRUE}
+The ASW is based on the average similarity of an observation to the other observations in the same cluster and the average dissimilarity of that observation to observations in other clusters. The higher the ASW value, the better the classification.
+
+The average silhouette width for a 3-cluster solution and a 4-cluster solution is respectively:
+```{r ASW clusters, echo = FALSE}
+clusval3$avg.silwidth # Average silhouette width for a 3-cluster solution
+
+clusval4$avg.silwidth # Average silhouette width for a 4-cluster solution
 ```
+
+Both measures point toward the same optimal 4-cluster solution. When we examine the CH index and the ASW for larger number of clusters, we see these two measurements grow larger and larger. However, it does not necessarily mean that choosing more clusters would be better, since clustering will no longer contribute to the data analysis.
+
+Show the cluster dendrodram again:
+
+```{r plot 4-cluster dendrogram, echo = FALSE, fig.height = 4, fig.width = 5}
+plot(hc,labels=milk$Name)
+rect.hclust(hc, k=4, border="red") # Show them on the dendrogram
+```
+
+Going ahead with the 4-cluster solution, we now compute some basic statistics to help with the characterisation of the clusters. 
+
+```{r characterisation of clusters, echo = FALSE, fig.height = 3, fig.width = 4}
+# Cluster centroids (standarised data)
+hc4 <- cutree(hc, k=4) # Cluster assignments
+st <- by(milk2,hc4,colMeans) # Mean vector by cluster
+st <- matrix(unlist(st), nrow = 4)
+colnames(st) <- c("Cluster 1","Cluster 2","Cluster 3","Cluster 4")
+rownames(st) <- levels(milk.long$Constituent)
+
+#barplot(st,beside=T,col = rainbow(4),legend.text=rownames(st), args.legend=list(x="topleft",bty="n", inset=c(0,-0.15)))
+
+st <- as.data.frame(st)
+print(st)
+##  Analysis needed later
+```
+
+As the overall mean is zero (recall we are using standardised data), the cluster centres can be directly used to make comparisons between groups in relative terms. Clearly, the barplot and the mean data we produced above show that the mammals in the cluster 2 have their milk compostions nearest to the average. While, the mammals in the cluster 4 have their milk compositions vary the most from the average.
+
+A scatterplot matrix of the variables using the grouping variable obtained (hc4) to differentiate groups by colours can be also useful to find the variables (months in this case study) that are helping the most to distinguish observations.
+
+```{r scatterplot, fig.height = 3.5, fig.width = 3.5}
+# Scatterplot matrix using the groups
+milkdat <- cbind(hc4,milk2) # Append grouping information
+milkdat <- as.data.frame(milkdat)
+library(lattice) # This package simplifies using group colours
+a <- splom(~milkdat[c(2:5)], groups = hc4, data = milkdat,
+par.settings = simpleTheme(col = 1:4, pch = 1:4),
+auto.key = list(columns = 4, title = "Cluster"))
+
+print(a)
+```
+
+According to the scatterplots, we see that the water constituent is positicely correlated to the lactose constituent (also for the protein vs fat), and the 4 clusters are not overlaped in the plot. So it seems that the differences between mammals are mostly due to differences in the more extreme constituents. Both the water and the lactose are negatively correlated to the fat and the protein.
+
+An informative plot can be built measuring the distances of each constituent to the centre of their respective groups.
+
+```{r plot for analysis, echo = FALSE, fig.height = 3.5, fig.width = 4}
+# Distances to the final cluster centroids (within-group distances)
+d1 <- apply(t(milk2[hc4==1,]),2,function(x) dist(rbind(x,st[,1]))) # Cluster 1
+d2 <- apply(t(milk2[hc4==2,]),2,function(x) dist(rbind(x,st[,2]))) # Cluster 2
+d3 <- apply(t(milk2[hc4==3,]),2,function(x) dist(rbind(x,st[,3]))) # Cluster 3
+d4 <- apply(t(milk2[hc4==4,]),2,function(x) dist(rbind(x,st[,4]))) # Cluster 4
+
+c1 <- rep(1:4,times=c(length(d1),length(d2),length(d3), length(d4)))
+c2 <- c(as.character(milk$Name[hc4==1]), as.character(milk$Name[hc4==2]),
+as.character(milk$Name[hc4==3]), as.character(milk$Name[hc4==4]))
+
+distances <- data.frame(Cluster=c1,Mammal=c2,Dist=c(d1,d2,d3,d4))
+# Plot distances to the cluster centroids
+plot(distances$Cluster,distances$Dist,axes=F,ylab="Distance to cluster centroid",
+xlab="Cluster",col="white",xlim=c(0.5,4), ylim=c(0,2))
+text(distances$Cluster,distances$Dist,labels=distances$Mammal)
+axis(1,at=1:4,labels=c("Cluster 1","Cluster 2","Cluster 3","Cluster 4")); axis(2)
+```
+
+The most homogeneous group is cluster 4. In clusters 1, 2 and 3 we find, respectively,
+hippos, elephants and rabbits as the most atypical mammals within those groups.
